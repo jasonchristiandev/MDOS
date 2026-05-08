@@ -2,8 +2,10 @@ ARCH = x86_64
 
 SOURCE = src
 INCLUDE = include
+FONTS = fonts
 BUILD = build
 ISO = iso
+FONT = font.psf
 
 EFIINC = /usr/include/efi
 EFIINCS = -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol
@@ -11,7 +13,7 @@ EFILIB = /usr/lib
 EFI_CRT_OBJS = $(EFILIB)/crt0-efi-$(ARCH).o
 EFI_LDS = $(EFILIB)/elf_$(ARCH)_efi.lds
 
-CFLAGS = $(EFIINCS) -fno-stack-protector -fpic \
+CFLAGS = $(EFIINCS) -fno-stack-protector \
 			-fshort-wchar -mno-red-zone -Wall \
 			-DEFI_FUNCTION_WRAPPER -DGNU_EFI_USE_MS_ABI \
 			-I$(INCLUDE)
@@ -43,7 +45,7 @@ clean:
 # BOOTLOADER
 
 $(BUILD)/boot.o: $(SOURCE)/boot.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -fpic -c $< -o $@
 
 $(BUILD)/boot.so: $(BUILD)/boot.o
 	$(LD) $(LDFLAGS) -T $(EFI_LDS) $(EFI_CRT_OBJS) $< -o $@ -lgnuefi -lefi
@@ -57,10 +59,16 @@ $(BUILD)/boot.efi: $(BUILD)/boot.so
 # KERNEL
 
 $(BUILD)/kernel.o: $(SOURCE)/kernel.c | $(BUILD)
-	$(CC) $(EFIINCS) $(CFLAGS) -c $< -o $@
+	$(CC) $(EFIINCS) $(CFLAGS) -mno-sse -mno-mmx -c $< -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kernel.o
-	$(LD) -nostdlib -T src/kernel.ld $< -o $@
+$(BUILD)/kernel.elf: $(BUILD)/kernel.o $(BUILD)/font.o
+	$(LD) -nostdlib -T src/kernel.ld $^ -o $@
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary -j .text -j .rodata -j .data $< $@
+
+
+# FONT
+
+$(BUILD)/font.o: $(FONTS)/$(FONT) | $(BUILD)
+	cd $(FONTS) && $(OBJCOPY) -O elf64-x86-64 -B i386 -I binary $(FONT) ../$(BUILD)/font.o

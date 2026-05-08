@@ -68,6 +68,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 	LOG_INFO(L"Found kernel.bin on the disk.\r\n");
 
 	EFI_FILE_INFO *file_info = NULL;
+
 	UINTN file_info_size = sizeof(EFI_FILE_INFO) + 256;
 	SystemTable->BootServices->AllocatePool(EfiLoaderData, file_info_size, (void **) &file_info);
 
@@ -75,18 +76,23 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 	kernel_file->GetInfo(kernel_file, &file_info_guid, &file_info_size, file_info);
 
 	UINTN kernel_size = file_info->FileSize;
-	SystemTable->BootServices->FreePool(file_info);
+	EFI_PHYSICAL_ADDRESS kernel_address = 0x100000;
+	UINTN pages = (kernel_size / 4096) + 1;
 
-	void *kernel_buffer = NULL;
-	kernel_file_status = SystemTable->BootServices->AllocatePool(EfiLoaderCode, kernel_size, &kernel_buffer);
+	kernel_file_status = SystemTable->BootServices->AllocatePages(
+		AllocateAddress,
+		EfiLoaderCode,
+		pages,
+		&kernel_address);
 
 	if (kernel_file_status != EFI_SUCCESS) {
-		LOG_ERROR(L"Failed to allocate memory for kernel.\r\n");
+		LOG_ERROR(L"Failed to reserve 1MB mark for kernel.\r\n");
 		EXIT;
 		return kernel_file_status;
 	}
+	LOG_INFO(L"Reserved 1MB mark for kernel.\r\n");
 
-	LOG_INFO(L"Allocated memory for kernel (%d bytes).\r\n", kernel_size);
+	void *kernel_buffer = (void *) kernel_address;
 
 	kernel_file_status = kernel_file->Read(kernel_file, &kernel_size, kernel_buffer);
 
