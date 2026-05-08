@@ -1,0 +1,15 @@
+CompileFlags:
+  Add: [
+    "-I../include",
+    "-I/usr/include/efi",
+    "-I/usr/include/efi/x86_64",
+    "-I/usr/include/efi/protocol",
+    "-DEFI_FUNCTION_WRAPPER",
+    "-DGNU_EFI_USE_MS_ABI",
+    "-fno-stack-protector",
+    "-mno-red-zone"
+  ]
+
+Diagnostics:
+  ClangTidy:
+    Remove: [bugprone-unused-*, readability-redundant-*]
