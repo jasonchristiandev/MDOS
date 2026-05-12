@@ -1,49 +1,26 @@
 #include "MDOS/bootinfo.h"
+#include "MDOS/utils.h"
+#include "efilib.h"
 #include <efi.h>
-#include <efilib.h>
 
-#define EXIT                                                                                  \
-	UINTN exit_index;                                                                         \
-	EFI_INPUT_KEY exit_key;                                                                   \
-	LOG_INFO(L"Press any key to exit...\r\n");                                                \
-	SystemTable->BootServices->WaitForEvent(1, &SystemTable->ConIn->WaitForKey, &exit_index); \
-	SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &exit_key);                         \
-	LOG_INFO(L"Exiting...\r\n\r\n");
-
-#define LOG_INFO(format, ...)                                                                    \
-	SystemTable->ConOut->SetAttribute(SystemTable->ConOut, EFI_TEXT_ATTR(EFI_WHITE, EFI_BLACK)); \
-	Print(L"[INFO] " format, ##__VA_ARGS__)
-
-#define LOG_WARNING(format, ...)                                                                  \
-	SystemTable->ConOut->SetAttribute(SystemTable->ConOut, EFI_TEXT_ATTR(EFI_BLACK, EFI_YELLOW)); \
-	Print(L"[WARNING] " format, ##__VA_ARGS__);                                                   \
-	SystemTable->ConOut->SetAttribute(SystemTable->ConOut, EFI_TEXT_ATTR(EFI_WHITE, EFI_BLACK))
-
-#define LOG_ERROR(format, ...)                                                                 \
-	SystemTable->ConOut->SetAttribute(SystemTable->ConOut, EFI_TEXT_ATTR(EFI_WHITE, EFI_RED)); \
-	Print(L"[ERROR] " format, ##__VA_ARGS__);                                                  \
-	SystemTable->ConOut->SetAttribute(SystemTable->ConOut, EFI_TEXT_ATTR(EFI_WHITE, EFI_BLACK))
-
-EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
+EFI_STATUS efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
 	// Initialization
 
-	InitializeLib(ImageHandle, SystemTable);
-
-	SystemTable->BootServices->SetWatchdogTimer(0, 0, 0, NULL);
-	SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
+	system_table->BootServices->SetWatchdogTimer(0, 0, 0, NULL);
+	system_table->ConOut->ClearScreen(system_table->ConOut);
 
 	LOG_INFO(L"Starting MDOS...\r\n");
 
 	// Load Kernel
 
 	EFI_LOADED_IMAGE *image = NULL;
-	SystemTable->BootServices->HandleProtocol(
-		ImageHandle,
+	system_table->BootServices->HandleProtocol(
+		image_handle,
 		&gEfiLoadedImageProtocolGuid,
 		(void **) &image);
 
 	EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *file_system = NULL;
-	SystemTable->BootServices->HandleProtocol(
+	system_table->BootServices->HandleProtocol(
 		image->DeviceHandle,
 		&gEfiSimpleFileSystemProtocolGuid,
 		(void **) &file_system);
@@ -70,7 +47,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 	EFI_FILE_INFO *file_info = NULL;
 
 	UINTN file_info_size = sizeof(EFI_FILE_INFO) + 256;
-	SystemTable->BootServices->AllocatePool(EfiLoaderData, file_info_size, (void **) &file_info);
+	system_table->BootServices->AllocatePool(EfiLoaderData, file_info_size, (void **) &file_info);
 
 	EFI_GUID file_info_guid = EFI_FILE_INFO_ID;
 	kernel_file->GetInfo(kernel_file, &file_info_guid, &file_info_size, file_info);
@@ -79,7 +56,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 	EFI_PHYSICAL_ADDRESS kernel_address = 0x100000;
 	UINTN pages = (kernel_size / 4096) + 1;
 
-	kernel_file_status = SystemTable->BootServices->AllocatePages(
+	kernel_file_status = system_table->BootServices->AllocatePages(
 		AllocateAddress,
 		EfiLoaderCode,
 		pages,
@@ -108,36 +85,39 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 
 	// Graphics
 
-	EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
-	EFI_STATUS gop_status = SystemTable->BootServices->LocateProtocol(
+	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
+	EFI_STATUS gop_status = system_table->BootServices->LocateProtocol(
 		&gEfiGraphicsOutputProtocolGuid,
 		NULL,
-		(void **) &Gop);
+		(void **) &gop);
 
 	if (gop_status != EFI_SUCCESS) {
 		LOG_ERROR(L"Failed to locate GOP (Graphics Output Protocol).\r\n");
 		return gop_status;
 	}
 
-	LOG_INFO(L"Graphics initialized (%dx%d).\r\n",
-			 Gop->Mode->Info->HorizontalResolution,
-			 Gop->Mode->Info->VerticalResolution);
+	LOG_INFO(L"Graphics found (%dx%d).\r\n",
+			 gop->Mode->Info->HorizontalResolution,
+			 gop->Mode->Info->VerticalResolution);
 
-	BOOT_INFO BootInfo;
-	BootInfo.framebuffer_base = (void *) Gop->Mode->FrameBufferBase;
-	BootInfo.framebuffer_size = Gop->Mode->FrameBufferSize;
-	BootInfo.width = Gop->Mode->Info->HorizontalResolution;
-	BootInfo.height = Gop->Mode->Info->VerticalResolution;
-	BootInfo.pixels_per_scanline = Gop->Mode->Info->PixelsPerScanLine;
+	BOOT_INFO boot_info;
+	boot_info.system_table = system_table;
+	GRAPHICS_INFO graphics_info;
+	graphics_info.framebuffer_base = (void *) gop->Mode->FrameBufferBase;
+	graphics_info.framebuffer_size = gop->Mode->FrameBufferSize;
+	graphics_info.width = gop->Mode->Info->HorizontalResolution;
+	graphics_info.height = gop->Mode->Info->VerticalResolution;
+	graphics_info.pixels_per_scanline = gop->Mode->Info->PixelsPerScanLine;
+	boot_info.graphics_info = &graphics_info;
 
 	// Start Kernel
 
 	typedef void __attribute__((sysv_abi)) (*KernelEntry)(BOOT_INFO *);
 	KernelEntry kernel_start = (KernelEntry) kernel_buffer;
 
-	LOG_INFO(L"Starting kernel...");
+	LOG_INFO(L"Starting kernel...\r\n\r\n");
 
-	kernel_start(&BootInfo);
+	kernel_start(&boot_info);
 
 	return EFI_SUCCESS;
 }

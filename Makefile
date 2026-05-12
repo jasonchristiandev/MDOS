@@ -61,14 +61,8 @@ $(BUILD)/boot.efi: $(BUILD)/boot.so
 $(BUILD)/kernel.o: $(SOURCE)/kernel.c | $(BUILD)
 	$(CC) $(EFIINCS) $(CFLAGS) -mno-sse -mno-mmx -c $< -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kernel.o $(BUILD)/font.o
+$(BUILD)/kernel.elf: $(BUILD)/kernel.o
 	$(LD) -nostdlib -T src/kernel.ld $^ -o $@
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary -j .text -j .rodata -j .data $< $@
-
-
-# FONT
-
-$(BUILD)/font.o: $(FONTS)/$(FONT) | $(BUILD)
-	cd $(FONTS) && $(OBJCOPY) -O elf64-x86-64 -B i386 -I binary $(FONT) ../$(BUILD)/font.o
