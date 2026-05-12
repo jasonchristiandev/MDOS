@@ -1,4 +1,5 @@
 #pragma once
+#include "storage.h"
 #include "utils.h"
 #include <efi.h>
 
@@ -133,6 +134,41 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 				PRINT(L"      -> Port %d: Unknown device (SIG: 0x%x).\r\n", i, sig);
 				break;
 		}
+
+		HBA_PORT *port = (HBA_PORT *) port_base;
+
+		EFI_PHYSICAL_ADDRESS cl_addr, fis_addr, ct_addr, buffer_addr;
+
+		system_table->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &cl_addr);
+		system_table->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &fis_addr);
+		system_table->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &ct_addr);
+		system_table->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &buffer_addr);
+
+		system_table->BootServices->SetMem((void *) cl_addr, 4096, 0);
+		system_table->BootServices->SetMem((void *) fis_addr, 4096, 0);
+		system_table->BootServices->SetMem((void *) ct_addr, 4096, 0);
+		system_table->BootServices->SetMem((void *) buffer_addr, 4096, 0);
+
+		stop_port(port);
+		port->clb = (uint32_t) cl_addr;
+		port->clbu = (uint32_t) (cl_addr >> 32);
+		port->fb = (uint32_t) fis_addr;
+		port->fbu = (uint32_t) (fis_addr >> 32);
+
+		HBA_CMD_HEADER *cmd_hdr = (HBA_CMD_HEADER *) ((uintptr_t) cl_addr);
+		cmd_hdr[0].ctba = (uint32_t) ct_addr;
+		cmd_hdr[0].ctbau = (uint32_t) (ct_addr >> 32);
+
+		start_port(port);
+
+		if (ahci_read(system_table, port, 0, 1, (uint16_t *) buffer_addr)) {
+			uint16_t *sig = (uint16_t *) ((uintptr_t) buffer_addr + 510);
+			if (*sig == 0xAA55) {
+				PRINT(L"      -> [SUCCESS] Read LBA 0. Found Boot Signature 55AA!\r\n");
+			} else {
+				PRINT(L"      -> [WARNING] Read LBA 0, but signature was 0x%x\r\n", *sig);
+			}
+		}
 	}
 }
 
@@ -172,7 +208,7 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t
 }
 
 void scan_pci(EFI_SYSTEM_TABLE *system_table) {
-	bool found = false;
+	BOOLEAN found = FALSE;
 
 	for (uint16_t bus = 0; bus < 256; bus++) {
 		for (uint8_t dev = 0; dev < 32; dev++) {
@@ -193,13 +229,13 @@ void scan_pci(EFI_SYSTEM_TABLE *system_table) {
 				if (class_code == 0x01) {
 					if (subclass == 0x08 && prog_if == 0x02) {
 						scan_nvme(system_table, bus, dev, func);
-						found = true;
+						found = TRUE;
 					} else if (subclass == 0x06 && prog_if == 0x01) {
 						scan_ahci(system_table, bus, dev, func);
-						found = true;
+						found = TRUE;
 					} else if (subclass == 0x01) {
 						scan_ide(system_table, bus, dev, func);
-						found = true;
+						found = TRUE;
 					}
 				}
 
