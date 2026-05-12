@@ -12,6 +12,20 @@ static inline uint32_t inl(uint16_t port) {
 	return ret;
 }
 
+static inline void outb(uint16_t port, uint8_t val) {
+	__asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
+}
+
+static inline uint8_t inb(uint16_t port) {
+	uint8_t ret;
+	__asm__ volatile("inb %1, %0" : "=a"(ret) : "Nd"(port));
+	return ret;
+}
+
+static inline void insw(uint16_t port, void *addr, uint32_t count) {
+	__asm__ volatile("cld; rep insw" : "+D"(addr), "+c"(count) : "d"(port) : "memory");
+}
+
 uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset) {
 	uint32_t address = (uint32_t) ((uint32_t) 0x80000000 |
 								   ((uint32_t) bus << 16) |
@@ -32,8 +46,8 @@ void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset,
 	outl(0xCFC, val);
 }
 
-void nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	EfiPrintF(system_table, L"-> Found NVMe at %d:%d:%d\r\n", bus, dev, func);
+void scan_nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
+	EfiPrintF(system_table, L"-> Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
 	uint64_t nvme_base_addr = (bar0 & 0xFFFFFFF0);
@@ -62,8 +76,8 @@ void nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t fun
 	}
 }
 
-void ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	EfiPrintF(system_table, L"-> Found SATA AHCI at %d:%d:%d\r\n", bus, dev, func);
+void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
+	EfiPrintF(system_table, L"-> Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t abar = pci_read_config((uint8_t) bus, dev, func, 0x24);
 	uint64_t ahci_base = (abar & 0xFFFFFFF0);
@@ -118,8 +132,42 @@ void ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t fun
 	}
 }
 
+void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
+	EfiPrintF(system_table, L"-> Found IDE controller at %d:%d:%d\r\n", bus, dev, func);
+
+	uint16_t channels[] = {0x1F0, 0x170};
+	const CHAR16 *channel_names[] = {L"Primary", L"Secondary"};
+
+	for (int i = 0; i < 2; i++) {
+		uint16_t base = channels[i];
+
+		for (int drive = 0; drive < 2; drive++) {
+			outb(base + 6, (drive == 0) ? 0xA0 : 0xB0);
+			outb(base + 7, 0xEC);
+
+			uint8_t status = inb(base + 7);
+			if (status == 0) continue;
+
+			while (inb(base + 7) & 0x80);
+
+			uint8_t lba_mid = inb(base + 4);
+			uint8_t lba_hi = inb(base + 5);
+
+			if (lba_mid == 0x14 && lba_hi == 0xEB) {
+				EfiPrintF(system_table, L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
+						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
+			} else if (status & 0x01) {
+				continue;
+			} else {
+				EfiPrintF(system_table, L"  -> IDE %s %s: PATA HDD\r\n",
+						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
+			}
+		}
+	}
+}
+
 void scan_pci(EFI_SYSTEM_TABLE *system_table) {
-	bool found = FALSE;
+	bool found = false;
 
 	for (uint16_t bus = 0; bus < 256; bus++) {
 		for (uint8_t dev = 0; dev < 32; dev++) {
@@ -139,11 +187,14 @@ void scan_pci(EFI_SYSTEM_TABLE *system_table) {
 
 				if (class_code == 0x01) {
 					if (subclass == 0x08 && prog_if == 0x02) {
-						nvme(system_table, bus, dev, func);
-						found = TRUE;
+						scan_nvme(system_table, bus, dev, func);
+						found = true;
 					} else if (subclass == 0x06 && prog_if == 0x01) {
-						ahci(system_table, bus, dev, func);
-						found = TRUE;
+						scan_ahci(system_table, bus, dev, func);
+						found = true;
+					} else if (subclass == 0x01) {
+						scan_ide(system_table, bus, dev, func);
+						found = true;
 					}
 				}
 
