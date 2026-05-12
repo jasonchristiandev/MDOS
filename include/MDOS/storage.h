@@ -117,9 +117,7 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 
 		volatile uint32_t *ssts = (volatile uint32_t *) (port_base + 0x28);
 		uint32_t status = *ssts;
-		uint8_t det = status & 0x0F;
-
-		if (det != 0x03) continue;
+		if ((status & 0x0F0F) != 0x0103) continue;
 
 		volatile uint32_t *sig_reg = (volatile uint32_t *) (port_base + 0x24);
 		uint32_t sig = *sig_reg;
@@ -152,7 +150,7 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t
 			outb(base + 7, 0xEC);
 
 			uint8_t status = inb(base + 7);
-			if (status == 0) continue;
+			if (status == 0 || status == 0xFF) continue;
 
 			uint32_t timeout = 100000;
 			while ((inb(base + 7) & 0x80) && --timeout);
@@ -162,12 +160,12 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t
 
 			if (lba_mid == 0x14 && lba_hi == 0xEB) {
 				PRINT(L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
-						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
+					  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			} else if (inb(base + 7) & 0x01) {
 				continue;
 			} else {
 				PRINT(L"  -> IDE %s %s: PATA HDD\r\n",
-						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
+					  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			}
 		}
 	}
