@@ -163,7 +163,7 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t
 			if (lba_mid == 0x14 && lba_hi == 0xEB) {
 				PRINT(L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
 						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
-			} else if (status & 0x01) {
+			} else if (inb(base + 7) & 0x01) {
 				continue;
 			} else {
 				PRINT(L"  -> IDE %s %s: PATA HDD\r\n",
