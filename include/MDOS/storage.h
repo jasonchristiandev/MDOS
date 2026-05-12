@@ -121,6 +121,7 @@ void init_port(EFI_SYSTEM_TABLE *st, HBA_PORT *port) {
 }
 
 #define ATA_CMD_READ_DMA_EXT 0x25
+#define ATA_CMD_WRITE_DMA_EXT 0x35
 
 BOOLEAN ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
 	port->is = 0xFFFF;
@@ -163,7 +164,7 @@ BOOLEAN ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, 
 		spin++;
 	}
 	if (spin == 1000000) {
-		PRINT(L"Port is hung!\r\n");
+		LOG_ERROR(L"Port is hung!\r\n");
 		return FALSE;
 	}
 
@@ -173,7 +174,66 @@ BOOLEAN ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, 
 		if ((port->ci & (1 << slot)) == 0) break;
 
 		if (port->is & (1 << 30)) {
-			PRINT(L"Read disk error\r\n");
+			LOG_ERROR(L"Read disk error\r\n");
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+BOOLEAN ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
+	port->is = 0xFFFF;
+	int slot = 0;
+
+	HBA_CMD_HEADER *cmd_header = (HBA_CMD_HEADER *) (uintptr_t) port->clb;
+	cmd_header += slot;
+
+	cmd_header->cfl = sizeof(FIS_REG_H2D) / sizeof(uint32_t);
+	cmd_header->w = 1; // Write
+	cmd_header->prdtl = 1;
+
+	HBA_CMD_TBL *cmd_table = (HBA_CMD_TBL *) (uintptr_t) cmd_header->ctba;
+	system_table->BootServices->SetMem(cmd_table, sizeof(HBA_CMD_TBL), 0);
+
+	cmd_table->prdt_entry[0].dba = (uint32_t) (uintptr_t) buffer;
+	cmd_table->prdt_entry[0].dbau = (uint32_t) ((uintptr_t) buffer >> 32);
+	cmd_table->prdt_entry[0].dbc = (count << 9) - 1;
+	cmd_table->prdt_entry[0].i = 1;
+
+	FIS_REG_H2D *fis = (FIS_REG_H2D *) (&cmd_table->cfis);
+	fis->fis_type = 0x27;
+	fis->c = 1;
+	fis->command = ATA_CMD_WRITE_DMA_EXT;
+
+	fis->lba0 = (uint8_t) lba;
+	fis->lba1 = (uint8_t) (lba >> 8);
+	fis->lba2 = (uint8_t) (lba >> 16);
+	fis->device = 1 << 6;
+
+	fis->lba3 = (uint8_t) (lba >> 24);
+	fis->lba4 = (uint8_t) (lba >> 32);
+	fis->lba5 = (uint8_t) (lba >> 40);
+
+	fis->countl = (uint8_t) count;
+	fis->counth = (uint8_t) (count >> 8);
+
+	uint32_t spin = 0;
+	while ((port->tfd & (0x80 | 0x08)) && spin < 1000000) {
+		spin++;
+	}
+	if (spin == 1000000) {
+		LOG_ERROR(L"Port is hung!\r\n");
+		return FALSE;
+	}
+
+	port->ci = (1 << slot);
+
+	while (1) {
+		if ((port->ci & (1 << slot)) == 0) break;
+
+		if (port->is & (1 << 30)) {
+			LOG_ERROR(L"Write disk error\r\n");
 			return FALSE;
 		}
 	}

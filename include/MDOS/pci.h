@@ -1,4 +1,5 @@
 #pragma once
+#include "disk.h"
 #include "storage.h"
 #include "utils.h"
 #include <efi.h>
@@ -47,8 +48,8 @@ void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset,
 	outl(0xCFC, val);
 }
 
-void scan_nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	PRINT(L"-> Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
+void scan_nvme(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+	LOG_INFO(L"-> Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
 	uint64_t nvme_base_addr = (bar0 & 0xFFFFFFF0);
@@ -59,11 +60,11 @@ void scan_nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 	}
 
 	if (nvme_base_addr == 0) {
-		PRINT(L"   !! BAR0 is unassigned by Firmware.\r\n");
+		LOG_WARNING(L"   !! BAR0 is unassigned by Firmware.\r\n");
 		return;
 	}
 
-	PRINT(L"   -> BAR Address: 0x%llx\r\n", nvme_base_addr);
+	LOG_INFO(L"   -> BAR Address: 0x%llx\r\n", nvme_base_addr);
 
 	uint32_t command = pci_read_config((uint8_t) bus, dev, func, 0x04);
 	command |= 0x06;
@@ -72,14 +73,14 @@ void scan_nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 	volatile uint64_t *cap_reg = (volatile uint64_t *) (uintptr_t) nvme_base_addr;
 	uint64_t capabilities = *cap_reg;
 
-	PRINT(L"   -> NVMe CAP: 0x%llx\r\n", capabilities);
+	LOG_INFO(L"   -> NVMe CAP: 0x%llx\r\n", capabilities);
 
 	volatile uint32_t *vs_reg = (volatile uint32_t *) (uintptr_t) (nvme_base_addr + 0x08);
-	PRINT(L"   -> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
+	LOG_INFO(L"   -> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
 }
 
-void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	PRINT(L"-> Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
+void scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+	LOG_INFO(L"-> Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t abar = pci_read_config((uint8_t) bus, dev, func, 0x24);
 	uint64_t ahci_base = (abar & 0xFFFFFFF0);
@@ -90,14 +91,14 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 	}
 
 	if (ahci_base == 0) {
-		PRINT(L"   !! ABAR is not assigned.\r\n");
+		LOG_WARNING(L"   !! ABAR is not assigned.\r\n");
 		return;
 	}
 
 	uint32_t cmd = pci_read_config((uint8_t) bus, dev, func, 0x04);
 	pci_write_config((uint8_t) bus, dev, func, 0x04, cmd | 0x06);
 
-	PRINT(L"   -> ABAR Address: 0x%llx\r\n", ahci_base);
+	LOG_INFO(L"   -> ABAR Address: 0x%llx\r\n", ahci_base);
 
 	volatile uint32_t *ghc = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x04);
 	*ghc |= (1U << 31);
@@ -106,7 +107,7 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 	uint32_t cap = *ghc_cap;
 
 	int num_ports = (cap & 0x1F) + 1;
-	PRINT(L"   -> AHCI Ports: %d, CAP: 0x%x\r\n", num_ports, cap);
+	LOG_INFO(L"   -> AHCI Ports: %d, CAP: 0x%x\r\n", num_ports, cap);
 
 	volatile uint32_t *pi_reg = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x0C);
 	uint32_t pi = *pi_reg;
@@ -125,13 +126,15 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 
 		switch (sig) {
 			case 0x00000101:
-				PRINT(L"      -> Port %d: SATA HDD/SSD found.\r\n", i);
+				LOG_INFO(L"      -> Port %d: SATA HDD/SSD found.\r\n", i);
+				disk_manager_register(dm, DISK_TYPE_AHCI, bus, dev, func, (uint8_t) i, (void *) port_base);
+				LOG_INFO(L"      -> Registered as disk device (AHCI port %d)\r\n", i);
 				break;
 			case 0xEB140101:
-				PRINT(L"      -> Port %d: SATAPI (Optical) found.\r\n", i);
+				LOG_INFO(L"      -> Port %d: SATAPI (Optical) found.\r\n", i);
 				break;
 			default:
-				PRINT(L"      -> Port %d: Unknown device (SIG: 0x%x).\r\n", i, sig);
+				LOG_INFO(L"      -> Port %d: Unknown device (SIG: 0x%x).\r\n", i, sig);
 				break;
 		}
 
@@ -164,16 +167,16 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 		if (ahci_read(system_table, port, 0, 1, (uint16_t *) buffer_addr)) {
 			uint16_t *sig = (uint16_t *) ((uintptr_t) buffer_addr + 510);
 			if (*sig == 0xAA55) {
-				PRINT(L"      -> [SUCCESS] Read LBA 0. Found Boot Signature 55AA!\r\n");
+				LOG_INFO(L"      -> [SUCCESS] Read LBA 0. Found Boot Signature 55AA!\r\n");
 			} else {
-				PRINT(L"      -> [WARNING] Read LBA 0, but signature was 0x%x\r\n", *sig);
+				LOG_INFO(L"      -> [WARNING] Read LBA 0, but signature was 0x%x\r\n", *sig);
 			}
 		}
 	}
 }
 
-void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	PRINT(L"-> Found IDE controller at %d:%d:%d\r\n", bus, dev, func);
+void scan_ide(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+	LOG_INFO(L"-> Found IDE controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint16_t channels[] = {0x1F0, 0x170};
 	const CHAR16 *channel_names[] = {L"Primary", L"Secondary"};
@@ -195,19 +198,19 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t
 			uint8_t lba_hi = inb(base + 5);
 
 			if (lba_mid == 0x14 && lba_hi == 0xEB) {
-				PRINT(L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
+				LOG_INFO(L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
 					  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			} else if (inb(base + 7) & 0x01) {
 				continue;
 			} else {
-				PRINT(L"  -> IDE %s %s: PATA HDD\r\n",
+				LOG_INFO(L"  -> IDE %s %s: PATA HDD\r\n",
 					  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			}
 		}
 	}
 }
 
-void scan_pci(EFI_SYSTEM_TABLE *system_table) {
+void scan_pci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm) {
 	BOOLEAN found = FALSE;
 
 	for (uint16_t bus = 0; bus < 256; bus++) {
@@ -228,13 +231,13 @@ void scan_pci(EFI_SYSTEM_TABLE *system_table) {
 
 				if (class_code == 0x01) {
 					if (subclass == 0x08 && prog_if == 0x02) {
-						scan_nvme(system_table, bus, dev, func);
+						scan_nvme(system_table, dm, bus, dev, func);
 						found = TRUE;
 					} else if (subclass == 0x06 && prog_if == 0x01) {
-						scan_ahci(system_table, bus, dev, func);
+						scan_ahci(system_table, dm, bus, dev, func);
 						found = TRUE;
 					} else if (subclass == 0x01) {
-						scan_ide(system_table, bus, dev, func);
+						scan_ide(system_table, dm, bus, dev, func);
 						found = TRUE;
 					}
 				}
@@ -246,5 +249,5 @@ void scan_pci(EFI_SYSTEM_TABLE *system_table) {
 			}
 		}
 	}
-	if (!found) PRINT(L"!! No controllers found!\r\n");
+	if (!found) LOG_INFO(L"!! No controllers found!\r\n");
 }

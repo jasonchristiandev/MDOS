@@ -33,7 +33,15 @@ $(BUILD):
 	mkdir -p $(BUILD)
 
 disk.img:
-	qemu-img create -f raw disk.img 100M
+	rm -f disk.img
+	dd if=/dev/zero of=disk.img bs=1M count=100 status=none
+	printf "type=0c\n" | sfdisk disk.img 2>/dev/null
+	mformat -i disk.img@@1048576 -F -v MDOSDISK ::
+	printf 'Hello from MDOS FAT32!\r\n' | mcopy -i disk.img@@1048576 - ::hello.txt
+	printf 'Welcome to Modern Drive Operating System.\r\n' | mcopy -i disk.img@@1048576 - ::welcome.txt
+	printf 'This is a test text file.\r\n' | mcopy -i disk.img@@1048576 - ::readme.txt
+	mmd -i disk.img@@1048576 ::docs
+	printf 'MDOS documentation goes here.\r\n' | mcopy -i disk.img@@1048576 - ::docs/readme.txt
 
 run-preq: all disk.img
 	mkdir -p $(ISO)/EFI/BOOT
@@ -66,7 +74,7 @@ run-ide: run-preq
 					   -net none
 
 clean:
-	rm -rf *.o *.so *.efi $(BUILD) $(ISO)
+	rm -rf *.o *.so *.efi $(BUILD) $(ISO) disk.img MDOS.iso
 
 MDOS.iso:
 	xorriso -as mkisofs -R -f -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -o MDOS.iso $(ISO)/
