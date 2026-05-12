@@ -22,27 +22,137 @@ uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offs
 	return inl(0xCFC);
 }
 
-void scan_pci(EFI_SYSTEM_TABLE *system_table) {
-	for (int bus = 0; bus < 256; bus++) {
-		for (int dev = 0; dev < 32; dev++) {
-			uint32_t reg0 = pci_read_config(bus, dev, 0, 0x00);
-			uint16_t vendor = reg0 & 0xFFFF;
-			if (vendor == 0xFFFF) continue;
+void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset, uint32_t val) {
+	uint32_t address = (uint32_t) ((uint32_t) 0x80000000 |
+								   ((uint32_t) bus << 16) |
+								   ((uint32_t) device << 11) |
+								   ((uint32_t) func << 8) |
+								   (offset & 0xfc));
+	outl(0xCF8, address);
+	outl(0xCFC, val);
+}
 
-			uint32_t reg8 = pci_read_config(bus, dev, 0, 0x08);
-			uint8_t class_code = (reg8 >> 24) & 0xFF;
-			uint8_t subclass = (reg8 >> 16) & 0xFF;
-			uint8_t prog_if = (reg8 >> 8) & 0xFF;
+void nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
+	EfiPrintF(system_table, L"-> Found NVMe at %d:%d:%d\r\n", bus, dev, func);
 
-			if (class_code == 0x01) {
-				if (subclass == 0x06 && prog_if == 0x01) {
-					EfiPrintF(system_table, L"Found SATA AHCI controller at %d:%d:0.\r\n", bus, dev);
-				} else if (subclass == 0x08 && prog_if == 0x02) {
-					EfiPrintF(system_table, L"Found NVMe controller at %d:%d:0.\r\n", bus, dev);
-				} else if (subclass == 0x01) {
-					EfiPrintF(system_table, L"Found IDE controller at %d:%d:0.\r\n", bus, dev);
+	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
+	uint64_t nvme_base_addr = (bar0 & 0xFFFFFFF0);
+
+	if ((bar0 & 0x06) == 0x04) {
+		uint32_t bar1 = pci_read_config((uint8_t) bus, dev, func, 0x14);
+		nvme_base_addr |= ((uint64_t) bar1 << 32);
+	}
+
+	if (nvme_base_addr == 0) {
+		EfiPrintF(system_table, L"   !! BAR0 is unassigned by Firmware.\r\n");
+	} else {
+		EfiPrintF(system_table, L"   -> BAR Address: 0x%llx\r\n", nvme_base_addr);
+
+		uint32_t command = pci_read_config((uint8_t) bus, dev, func, 0x04);
+		command |= 0x06;
+		pci_write_config((uint8_t) bus, dev, func, 0x04, command);
+
+		volatile uint64_t *cap_reg = (volatile uint64_t *) (uintptr_t) nvme_base_addr;
+		uint64_t capabilities = *cap_reg;
+
+		EfiPrintF(system_table, L"   -> NVMe CAP: 0x%llx\r\n", capabilities);
+
+		volatile uint32_t *vs_reg = (volatile uint32_t *) (uintptr_t) (nvme_base_addr + 0x08);
+		EfiPrintF(system_table, L"   -> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
+	}
+}
+
+void ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
+	EfiPrintF(system_table, L"-> Found SATA AHCI at %d:%d:%d\r\n", bus, dev, func);
+
+	uint32_t abar = pci_read_config((uint8_t) bus, dev, func, 0x24);
+	uint64_t ahci_base = (abar & 0xFFFFFFF0);
+
+	volatile uint32_t *ghc = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x04);
+	*ghc |= (1U << 31);
+
+	if ((abar & 0x06) == 0x04) {
+		uint32_t abar_high = pci_read_config((uint8_t) bus, dev, func, 0x28);
+		ahci_base |= ((uint64_t) abar_high << 32);
+	}
+
+	if (ahci_base == 0) {
+		EfiPrintF(system_table, L"   !! ABAR is not assigned.\r\n");
+	} else {
+		uint32_t cmd = pci_read_config((uint8_t) bus, dev, func, 0x04);
+		pci_write_config((uint8_t) bus, dev, func, 0x04, cmd | 0x06);
+
+		EfiPrintF(system_table, L"   -> ABAR Address: 0x%llx\r\n", ahci_base);
+
+		volatile uint32_t *ghc_cap = (volatile uint32_t *) (uintptr_t) ahci_base;
+		uint32_t cap = *ghc_cap;
+
+		int num_ports = (cap & 0x1F) + 1;
+		EfiPrintF(system_table, L"   -> AHCI Ports: %d, CAP: 0x%x\r\n", num_ports, cap);
+
+		volatile uint32_t *pi_reg = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x0C);
+		uint32_t pi = *pi_reg;
+
+		for (int i = 0; i < 32; i++) {
+			if (pi & (1 << i)) {
+				uintptr_t port_base = ahci_base + 0x100 + (i * 0x80);
+
+				volatile uint32_t *ssts = (volatile uint32_t *) (port_base + 0x28);
+				uint32_t status = *ssts;
+				uint8_t det = status & 0x0F;
+
+				if (det == 0x03) {
+					volatile uint32_t *sig_reg = (volatile uint32_t *) (port_base + 0x24);
+					uint32_t sig = *sig_reg;
+
+					if (sig == 0x00000101) {
+						EfiPrintF(system_table, L"      -> Port %d: SATA HDD/SSD found.\r\n", i);
+					} else if (sig == 0xEB140101) {
+						EfiPrintF(system_table, L"      -> Port %d: SATAPI (Optical) found.\r\n", i);
+					} else {
+						EfiPrintF(system_table, L"      -> Port %d: Unknown device (SIG: 0x%x).\r\n", i, sig);
+					}
 				}
 			}
 		}
 	}
+}
+
+void scan_pci(EFI_SYSTEM_TABLE *system_table) {
+	bool found = FALSE;
+
+	for (uint16_t bus = 0; bus < 256; bus++) {
+		for (uint8_t dev = 0; dev < 32; dev++) {
+			for (uint8_t func = 0; func < 8; func++) {
+				uint32_t reg0 = pci_read_config((uint8_t) bus, dev, func, 0x00);
+				uint16_t vendor = reg0 & 0xFFFF;
+
+				if (vendor == 0xFFFF) {
+					if (func == 0) break;
+					continue;
+				}
+
+				uint32_t reg8 = pci_read_config((uint8_t) bus, dev, func, 0x08);
+				uint8_t class_code = (reg8 >> 24) & 0xFF;
+				uint8_t subclass = (reg8 >> 16) & 0xFF;
+				uint8_t prog_if = (reg8 >> 8) & 0xFF;
+
+				if (class_code == 0x01) {
+					if (subclass == 0x08 && prog_if == 0x02) {
+						nvme(system_table, bus, dev, func);
+						found = TRUE;
+					} else if (subclass == 0x06 && prog_if == 0x01) {
+						ahci(system_table, bus, dev, func);
+						found = TRUE;
+					}
+				}
+
+				if (func == 0) {
+					uint32_t regC = pci_read_config((uint8_t) bus, dev, 0, 0x0C);
+					if (!((regC >> 16) & 0x80)) break;
+				}
+			}
+		}
+	}
+	if (!found) EfiPrintF(system_table, L"!! No controllers found!\r\n");
 }

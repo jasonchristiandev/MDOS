@@ -35,15 +35,34 @@ $(BUILD):
 disk.img:
 	qemu-img create -f raw disk.img 100M
 
-run: all disk.img
+run-preq: all disk.img
 	mkdir -p $(ISO)/EFI/BOOT
 	cp $(BUILD)/boot.efi $(ISO)/EFI/BOOT/BOOTX64.EFI
 	cp build/kernel.bin iso/kernel.bin
-	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd \
+
+run: run-ahci
+
+run-ahci: run-preq
+	qemu-system-x86_64 -machine q35 \
+					   -bios /usr/share/ovmf/OVMF.fd \
 					   -drive file=fat:rw:$(ISO),format=raw \
 					   -device ahci,id=ahci0 \
 					   -drive id=drive0,file=disk.img,if=none,format=raw \
 					   -device ide-hd,drive=drive0,bus=ahci0.0 \
+					   -net none
+
+run-nvme: run-preq
+	qemu-system-x86_64 -machine q35 \
+					   -bios /usr/share/ovmf/OVMF.fd \
+					   -drive file=fat:rw:$(ISO),format=raw \
+					   -drive file=disk.img,if=none,id=nvm0,format=raw \
+					   -device nvme,serial=MDOS_DISK_1,drive=nvm0 \
+					   -net none
+
+run-ide: run-preq
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd \
+					   -drive file=fat:rw:$(ISO),format=raw \
+					   -drive file=disk.img,if=ide,index=1,media=disk,format=raw \
 					   -net none
 
 clean:
