@@ -32,11 +32,19 @@ all: $(BUILD)/boot.efi $(BUILD)/kernel.bin
 $(BUILD):
 	mkdir -p $(BUILD)
 
-run: all
+disk.img:
+	qemu-img create -f raw disk.img 100M
+
+run: all disk.img
 	mkdir -p $(ISO)/EFI/BOOT
 	cp $(BUILD)/boot.efi $(ISO)/EFI/BOOT/BOOTX64.EFI
 	cp build/kernel.bin iso/kernel.bin
-	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -drive file=fat:rw:$(ISO),format=raw -net none
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd \
+					   -drive file=fat:rw:$(ISO),format=raw \
+					   -device ahci,id=ahci0 \
+					   -drive id=drive0,file=disk.img,if=none,format=raw \
+					   -device ide-hd,drive=drive0,bus=ahci0.0 \
+					   -net none
 
 clean:
 	rm -rf *.o *.so *.efi $(BUILD) $(ISO)
