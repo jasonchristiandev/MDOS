@@ -1,5 +1,5 @@
 #pragma once
-#include "printf.h"
+#include "utils.h"
 #include <efi.h>
 
 static inline void outl(uint16_t port, uint32_t val) {
@@ -47,7 +47,7 @@ void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset,
 }
 
 void scan_nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	EfiPrintF(system_table, L"-> Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
+	PRINT(L"-> Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
 	uint64_t nvme_base_addr = (bar0 & 0xFFFFFFF0);
@@ -58,32 +58,30 @@ void scan_nvme(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 	}
 
 	if (nvme_base_addr == 0) {
-		EfiPrintF(system_table, L"   !! BAR0 is unassigned by Firmware.\r\n");
-	} else {
-		EfiPrintF(system_table, L"   -> BAR Address: 0x%llx\r\n", nvme_base_addr);
-
-		uint32_t command = pci_read_config((uint8_t) bus, dev, func, 0x04);
-		command |= 0x06;
-		pci_write_config((uint8_t) bus, dev, func, 0x04, command);
-
-		volatile uint64_t *cap_reg = (volatile uint64_t *) (uintptr_t) nvme_base_addr;
-		uint64_t capabilities = *cap_reg;
-
-		EfiPrintF(system_table, L"   -> NVMe CAP: 0x%llx\r\n", capabilities);
-
-		volatile uint32_t *vs_reg = (volatile uint32_t *) (uintptr_t) (nvme_base_addr + 0x08);
-		EfiPrintF(system_table, L"   -> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
+		PRINT(L"   !! BAR0 is unassigned by Firmware.\r\n");
+		return;
 	}
+
+	PRINT(L"   -> BAR Address: 0x%llx\r\n", nvme_base_addr);
+
+	uint32_t command = pci_read_config((uint8_t) bus, dev, func, 0x04);
+	command |= 0x06;
+	pci_write_config((uint8_t) bus, dev, func, 0x04, command);
+
+	volatile uint64_t *cap_reg = (volatile uint64_t *) (uintptr_t) nvme_base_addr;
+	uint64_t capabilities = *cap_reg;
+
+	PRINT(L"   -> NVMe CAP: 0x%llx\r\n", capabilities);
+
+	volatile uint32_t *vs_reg = (volatile uint32_t *) (uintptr_t) (nvme_base_addr + 0x08);
+	PRINT(L"   -> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
 }
 
 void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	EfiPrintF(system_table, L"-> Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
+	PRINT(L"-> Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t abar = pci_read_config((uint8_t) bus, dev, func, 0x24);
 	uint64_t ahci_base = (abar & 0xFFFFFFF0);
-
-	volatile uint32_t *ghc = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x04);
-	*ghc |= (1U << 31);
 
 	if ((abar & 0x06) == 0x04) {
 		uint32_t abar_high = pci_read_config((uint8_t) bus, dev, func, 0x28);
@@ -91,49 +89,57 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_
 	}
 
 	if (ahci_base == 0) {
-		EfiPrintF(system_table, L"   !! ABAR is not assigned.\r\n");
-	} else {
-		uint32_t cmd = pci_read_config((uint8_t) bus, dev, func, 0x04);
-		pci_write_config((uint8_t) bus, dev, func, 0x04, cmd | 0x06);
+		PRINT(L"   !! ABAR is not assigned.\r\n");
+		return;
+	}
 
-		EfiPrintF(system_table, L"   -> ABAR Address: 0x%llx\r\n", ahci_base);
+	uint32_t cmd = pci_read_config((uint8_t) bus, dev, func, 0x04);
+	pci_write_config((uint8_t) bus, dev, func, 0x04, cmd | 0x06);
 
-		volatile uint32_t *ghc_cap = (volatile uint32_t *) (uintptr_t) ahci_base;
-		uint32_t cap = *ghc_cap;
+	PRINT(L"   -> ABAR Address: 0x%llx\r\n", ahci_base);
 
-		int num_ports = (cap & 0x1F) + 1;
-		EfiPrintF(system_table, L"   -> AHCI Ports: %d, CAP: 0x%x\r\n", num_ports, cap);
+	volatile uint32_t *ghc = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x04);
+	*ghc |= (1U << 31);
 
-		volatile uint32_t *pi_reg = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x0C);
-		uint32_t pi = *pi_reg;
+	volatile uint32_t *ghc_cap = (volatile uint32_t *) (uintptr_t) ahci_base;
+	uint32_t cap = *ghc_cap;
 
-		for (int i = 0; i < 32; i++) {
-			if (pi & (1 << i)) {
-				uintptr_t port_base = ahci_base + 0x100 + (i * 0x80);
+	int num_ports = (cap & 0x1F) + 1;
+	PRINT(L"   -> AHCI Ports: %d, CAP: 0x%x\r\n", num_ports, cap);
 
-				volatile uint32_t *ssts = (volatile uint32_t *) (port_base + 0x28);
-				uint32_t status = *ssts;
-				uint8_t det = status & 0x0F;
+	volatile uint32_t *pi_reg = (volatile uint32_t *) (uintptr_t) (ahci_base + 0x0C);
+	uint32_t pi = *pi_reg;
 
-				if (det == 0x03) {
-					volatile uint32_t *sig_reg = (volatile uint32_t *) (port_base + 0x24);
-					uint32_t sig = *sig_reg;
+	for (int i = 0; i < 32; i++) {
+		if (!(pi & (1 << i))) continue;
 
-					if (sig == 0x00000101) {
-						EfiPrintF(system_table, L"      -> Port %d: SATA HDD/SSD found.\r\n", i);
-					} else if (sig == 0xEB140101) {
-						EfiPrintF(system_table, L"      -> Port %d: SATAPI (Optical) found.\r\n", i);
-					} else {
-						EfiPrintF(system_table, L"      -> Port %d: Unknown device (SIG: 0x%x).\r\n", i, sig);
-					}
-				}
-			}
+		uintptr_t port_base = ahci_base + 0x100 + (i * 0x80);
+
+		volatile uint32_t *ssts = (volatile uint32_t *) (port_base + 0x28);
+		uint32_t status = *ssts;
+		uint8_t det = status & 0x0F;
+
+		if (det != 0x03) continue;
+
+		volatile uint32_t *sig_reg = (volatile uint32_t *) (port_base + 0x24);
+		uint32_t sig = *sig_reg;
+
+		switch (sig) {
+			case 0x00000101:
+				PRINT(L"      -> Port %d: SATA HDD/SSD found.\r\n", i);
+				break;
+			case 0xEB140101:
+				PRINT(L"      -> Port %d: SATAPI (Optical) found.\r\n", i);
+				break;
+			default:
+				PRINT(L"      -> Port %d: Unknown device (SIG: 0x%x).\r\n", i, sig);
+				break;
 		}
 	}
 }
 
 void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t func) {
-	EfiPrintF(system_table, L"-> Found IDE controller at %d:%d:%d\r\n", bus, dev, func);
+	PRINT(L"-> Found IDE controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint16_t channels[] = {0x1F0, 0x170};
 	const CHAR16 *channel_names[] = {L"Primary", L"Secondary"};
@@ -148,18 +154,19 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, uint16_t bus, uint8_t dev, uint8_t
 			uint8_t status = inb(base + 7);
 			if (status == 0) continue;
 
-			while (inb(base + 7) & 0x80);
+			uint32_t timeout = 100000;
+			while ((inb(base + 7) & 0x80) && --timeout);
 
 			uint8_t lba_mid = inb(base + 4);
 			uint8_t lba_hi = inb(base + 5);
 
 			if (lba_mid == 0x14 && lba_hi == 0xEB) {
-				EfiPrintF(system_table, L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
+				PRINT(L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
 						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			} else if (status & 0x01) {
 				continue;
 			} else {
-				EfiPrintF(system_table, L"  -> IDE %s %s: PATA HDD\r\n",
+				PRINT(L"  -> IDE %s %s: PATA HDD\r\n",
 						  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			}
 		}
@@ -205,5 +212,5 @@ void scan_pci(EFI_SYSTEM_TABLE *system_table) {
 			}
 		}
 	}
-	if (!found) EfiPrintF(system_table, L"!! No controllers found!\r\n");
+	if (!found) PRINT(L"!! No controllers found!\r\n");
 }
