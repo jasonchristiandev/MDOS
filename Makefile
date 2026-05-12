@@ -68,6 +68,10 @@ run-ide: run-preq
 clean:
 	rm -rf *.o *.so *.efi $(BUILD) $(ISO)
 
+MDOS.iso:
+	xorriso -as mkisofs -R -f -e EFI/BOOT/BOOTX64.EFI -no-emul-boot -o MDOS.iso $(ISO)/
+
+iso: MDOS.iso
 
 # BOOTLOADER
 
