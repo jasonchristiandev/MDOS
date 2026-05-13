@@ -2,7 +2,7 @@
 #include <efi.h>
 #include <efistdarg.h>
 
-static inline void itoa(unsigned long long n, CHAR16 *str, int base, BOOLEAN signed_val) {
+static inline void printf_itoa(unsigned long long n, CHAR16 *str, int base, BOOLEAN signed_val) {
 	CHAR16 *p = str;
 	CHAR16 *pa, *pb;
 	unsigned long long decimal = n;
@@ -30,7 +30,7 @@ static inline void itoa(unsigned long long n, CHAR16 *str, int base, BOOLEAN sig
 	}
 }
 
-static inline void EfiPrintF(EFI_SYSTEM_TABLE *system_table, const CHAR16 *format, ...) {
+static inline void printf(EFI_SYSTEM_TABLE *system_table, const CHAR16 *format, ...) {
 	va_list args;
 	va_start(args, format);
 
@@ -53,10 +53,10 @@ static inline void EfiPrintF(EFI_SYSTEM_TABLE *system_table, const CHAR16 *forma
 				}
 				case L'd': {
 					if (is64) {
-						itoa(va_arg(args, long long), buf, 10, TRUE);
+						printf_itoa(va_arg(args, long long), buf, 10, TRUE);
 					}
 					else {
-						itoa(va_arg(args, int), buf, 10, TRUE);
+						printf_itoa(va_arg(args, int), buf, 10, TRUE);
 					}
 
 					system_table->ConOut->OutputString(system_table->ConOut, buf);
@@ -64,9 +64,9 @@ static inline void EfiPrintF(EFI_SYSTEM_TABLE *system_table, const CHAR16 *forma
 				}
 				case L'u': {
 					if (is64) {
-						itoa(va_arg(args, unsigned long long), buf, 10, FALSE);
+						printf_itoa(va_arg(args, unsigned long long), buf, 10, FALSE);
 					} else {
-						itoa(va_arg(args, unsigned int), buf, 10, FALSE);
+						printf_itoa(va_arg(args, unsigned int), buf, 10, FALSE);
 					}
 
 					system_table->ConOut->OutputString(system_table->ConOut, buf);
@@ -74,9 +74,9 @@ static inline void EfiPrintF(EFI_SYSTEM_TABLE *system_table, const CHAR16 *forma
 				}
 				case L'x': {
 					if (is64) {
-						itoa(va_arg(args, unsigned long long), buf, 16, FALSE);
+						printf_itoa(va_arg(args, unsigned long long), buf, 16, FALSE);
 					} else {
-						itoa(va_arg(args, unsigned int), buf, 16, FALSE);
+						printf_itoa(va_arg(args, unsigned int), buf, 16, FALSE);
 					}
 
 					system_table->ConOut->OutputString(system_table->ConOut, buf);

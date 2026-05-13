@@ -11,7 +11,7 @@
 		LOG_INFO(L"Exiting...\r\n\r\n");                                                            \
 	} while (0)
 
-#define PRINT(format, ...) EfiPrintF(system_table, format, ##__VA_ARGS__)
+#define PRINT(format, ...) printf(system_table, format, ##__VA_ARGS__)
 
 #define LOG_INFO(format, ...)                                                                          \
 	do {                                                                                               \

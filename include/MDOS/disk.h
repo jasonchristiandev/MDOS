@@ -49,7 +49,7 @@ static inline void disk_manager_register(DISK_MANAGER *manager, uint8_t type, ui
 static inline BOOLEAN disk_read(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *disk, uint64_t lba, uint32_t count, void *buffer) {
 	switch (disk->type) {
 		case DISK_TYPE_AHCI:
-			return ahci_read(system_table, (HBA_PORT *) disk->port, lba, count, (uint16_t *) buffer);
+			return storage_ahci_read(system_table, (HBA_PORT *) disk->port, lba, count, (uint16_t *) buffer);
 		case DISK_TYPE_NVME:
 			LOG_ERROR(L"!! NVMe read not yet implemented\r\n");
 			return FALSE;
@@ -65,7 +65,7 @@ static inline BOOLEAN disk_read(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *dis
 static inline BOOLEAN disk_write(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *disk, uint64_t lba, uint32_t count, void *buffer) {
 	switch (disk->type) {
 		case DISK_TYPE_AHCI:
-			return ahci_write(system_table, (HBA_PORT *) disk->port, lba, count, (uint16_t *) buffer);
+			return storage_ahci_write(system_table, (HBA_PORT *) disk->port, lba, count, (uint16_t *) buffer);
 		case DISK_TYPE_NVME:
 			LOG_ERROR(L"!! NVMe write not yet implemented\r\n");
 			return FALSE;

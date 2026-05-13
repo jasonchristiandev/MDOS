@@ -87,14 +87,14 @@ typedef struct {
 	HBA_PRDT_ENTRY prdt_entry[1];
 } HBA_CMD_TBL;
 
-void start_port(HBA_PORT *port) {
+void storage_start_port(HBA_PORT *port) {
 	while (port->cmd & (1 << 15));
 
 	port->cmd |= 0x10;
 	port->cmd |= 0x01;
 }
 
-void stop_port(HBA_PORT *port) {
+void storage_stop_port(HBA_PORT *port) {
 	port->cmd &= ~0x01;
 	port->cmd &= ~0x10;
 
@@ -105,8 +105,8 @@ void stop_port(HBA_PORT *port) {
 	}
 }
 
-void init_port(EFI_SYSTEM_TABLE *st, HBA_PORT *port) {
-	stop_port(port);
+void storage_init_port(EFI_SYSTEM_TABLE *st, HBA_PORT *port) {
+	storage_stop_port(port);
 
 	// port->clb = (uint32_t) (uintptr_t) cl_addr;
 	// port->clbu = (uint32_t) ((uintptr_t) cl_addr >> 32);
@@ -117,13 +117,13 @@ void init_port(EFI_SYSTEM_TABLE *st, HBA_PORT *port) {
 	port->is = 0xFFFFFFFF;
 	port->serr = 0xFFFFFFFF;
 
-	start_port(port);
+	storage_start_port(port);
 }
 
 #define ATA_CMD_READ_DMA_EXT 0x25
 #define ATA_CMD_WRITE_DMA_EXT 0x35
 
-BOOLEAN ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
+BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
 	port->is = 0xFFFF;
 	int slot = 0;
 
@@ -182,7 +182,7 @@ BOOLEAN ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, 
 	return TRUE;
 }
 
-BOOLEAN ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
+BOOLEAN storage_ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
 	port->is = 0xFFFF;
 	int slot = 0;
 

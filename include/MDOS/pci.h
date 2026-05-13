@@ -1,32 +1,9 @@
 #pragma once
+#include "asm.h"
 #include "disk.h"
 #include "storage.h"
 #include "utils.h"
 #include <efi.h>
-
-static inline void outl(uint16_t port, uint32_t val) {
-	__asm__ volatile("outl %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint32_t inl(uint16_t port) {
-	uint32_t ret;
-	__asm__ volatile("inl %1, %0" : "=a"(ret) : "Nd"(port));
-	return ret;
-}
-
-static inline void outb(uint16_t port, uint8_t val) {
-	__asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline uint8_t inb(uint16_t port) {
-	uint8_t ret;
-	__asm__ volatile("inb %1, %0" : "=a"(ret) : "Nd"(port));
-	return ret;
-}
-
-static inline void insw(uint16_t port, void *addr, uint32_t count) {
-	__asm__ volatile("cld; rep insw" : "+D"(addr), "+c"(count) : "d"(port) : "memory");
-}
 
 uint32_t pci_read_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset) {
 	uint32_t address = (uint32_t) ((uint32_t) 0x80000000 |
@@ -48,7 +25,7 @@ void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset,
 	outl(0xCFC, val);
 }
 
-void scan_nvme(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+void pci_scan_nvme(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
 	LOG_INFO(L"-> Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
@@ -79,7 +56,7 @@ void scan_nvme(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, u
 	LOG_INFO(L"   -> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
 }
 
-void scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+void pci_scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
 	LOG_INFO(L"-> Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint32_t abar = pci_read_config((uint8_t) bus, dev, func, 0x24);
@@ -152,7 +129,7 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, u
 		system_table->BootServices->SetMem((void *) ct_addr, 4096, 0);
 		system_table->BootServices->SetMem((void *) buffer_addr, 4096, 0);
 
-		stop_port(port);
+		storage_stop_port(port);
 		port->clb = (uint32_t) cl_addr;
 		port->clbu = (uint32_t) (cl_addr >> 32);
 		port->fb = (uint32_t) fis_addr;
@@ -162,9 +139,9 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, u
 		cmd_hdr[0].ctba = (uint32_t) ct_addr;
 		cmd_hdr[0].ctbau = (uint32_t) (ct_addr >> 32);
 
-		start_port(port);
+		storage_start_port(port);
 
-		if (ahci_read(system_table, port, 0, 1, (uint16_t *) buffer_addr)) {
+		if (storage_ahci_read(system_table, port, 0, 1, (uint16_t *) buffer_addr)) {
 			uint16_t *sig = (uint16_t *) ((uintptr_t) buffer_addr + 510);
 			if (*sig == 0xAA55) {
 				LOG_INFO(L"      -> [SUCCESS] Read LBA 0. Found Boot Signature 55AA!\r\n");
@@ -175,7 +152,7 @@ void scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, u
 	}
 }
 
-void scan_ide(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+void pci_scan_ide(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
 	LOG_INFO(L"-> Found IDE controller at %d:%d:%d\r\n", bus, dev, func);
 
 	uint16_t channels[] = {0x1F0, 0x170};
@@ -199,18 +176,18 @@ void scan_ide(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, ui
 
 			if (lba_mid == 0x14 && lba_hi == 0xEB) {
 				LOG_INFO(L"  -> IDE %s %s: PATAPI (CD-ROM)\r\n",
-					  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
+						 channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			} else if (inb(base + 7) & 0x01) {
 				continue;
 			} else {
 				LOG_INFO(L"  -> IDE %s %s: PATA HDD\r\n",
-					  channel_names[i], (drive == 0) ? L"Master" : L"Slave");
+						 channel_names[i], (drive == 0) ? L"Master" : L"Slave");
 			}
 		}
 	}
 }
 
-void scan_pci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm) {
+void pci_scan(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm) {
 	BOOLEAN found = FALSE;
 
 	for (uint16_t bus = 0; bus < 256; bus++) {
@@ -231,13 +208,13 @@ void scan_pci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm) {
 
 				if (class_code == 0x01) {
 					if (subclass == 0x08 && prog_if == 0x02) {
-						scan_nvme(system_table, dm, bus, dev, func);
+						pci_scan_nvme(system_table, dm, bus, dev, func);
 						found = TRUE;
 					} else if (subclass == 0x06 && prog_if == 0x01) {
-						scan_ahci(system_table, dm, bus, dev, func);
+						pci_scan_ahci(system_table, dm, bus, dev, func);
 						found = TRUE;
 					} else if (subclass == 0x01) {
-						scan_ide(system_table, dm, bus, dev, func);
+						pci_scan_ide(system_table, dm, bus, dev, func);
 						found = TRUE;
 					}
 				}
