@@ -87,14 +87,14 @@ typedef struct {
 	HBA_PRDT_ENTRY prdt_entry[1];
 } HBA_CMD_TBL;
 
-void storage_start_port(HBA_PORT *port) {
+void storage_start_port(volatile HBA_PORT *port) {
 	while (port->cmd & (1 << 15));
 
 	port->cmd |= 0x10;
 	port->cmd |= 0x01;
 }
 
-void storage_stop_port(HBA_PORT *port) {
+void storage_stop_port(volatile HBA_PORT *port) {
 	port->cmd &= ~0x01;
 	port->cmd &= ~0x10;
 
@@ -123,7 +123,7 @@ void storage_init_port(EFI_SYSTEM_TABLE *st, HBA_PORT *port) {
 #define ATA_CMD_READ_DMA_EXT 0x25
 #define ATA_CMD_WRITE_DMA_EXT 0x35
 
-BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint8_t index, uint64_t lba, uint32_t count, uint16_t *buffer) {
+BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, volatile HBA_PORT *port, uint8_t index, uint64_t lba, uint32_t count, uint16_t *buffer) {
 	port->is = 0xFFFF;
 	int slot = 0;
 

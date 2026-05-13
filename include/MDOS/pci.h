@@ -25,37 +25,6 @@ void pci_write_config(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset,
 	outl(0xCFC, val);
 }
 
-void pci_scan_nvme(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
-	LOG_INFO(L"PCI_SCAN_NVME", L"Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
-
-	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
-	uint64_t nvme_base_addr = (bar0 & 0xFFFFFFF0);
-
-	if ((bar0 & 0x06) == 0x04) {
-		uint32_t bar1 = pci_read_config((uint8_t) bus, dev, func, 0x14);
-		nvme_base_addr |= ((uint64_t) bar1 << 32);
-	}
-
-	if (nvme_base_addr == 0) {
-		LOG_ERROR(L"PCI_SCAN_NVME", L"-> BAR0 is unassigned by Firmware.\r\n");
-		return;
-	}
-
-	LOG_INFO(L"PCI_SCAN_NVME", L"-> BAR Address: 0x%llx\r\n", nvme_base_addr);
-
-	uint32_t command = pci_read_config((uint8_t) bus, dev, func, 0x04);
-	command |= 0x06;
-	pci_write_config((uint8_t) bus, dev, func, 0x04, command);
-
-	volatile uint64_t *cap_reg = (volatile uint64_t *) (uintptr_t) nvme_base_addr;
-	uint64_t capabilities = *cap_reg;
-
-	LOG_INFO(L"PCI_SCAN_NVME", L"-> NVMe CAP: 0x%llx\r\n", capabilities);
-
-	volatile uint32_t *vs_reg = (volatile uint32_t *) (uintptr_t) (nvme_base_addr + 0x08);
-	LOG_INFO(L"PCI_SCAN_NVME", L"-> NVMe Ver: %d.%d\r\n", (*vs_reg >> 16), (*vs_reg >> 8) & 0xFF);
-}
-
 void pci_scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
 	LOG_INFO(L"PCI_SCAN_AHCI", L"Found SATA AHCI controller at %d:%d:%d\r\n", bus, dev, func);
 
@@ -115,7 +84,7 @@ void pci_scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bu
 				break;
 		}
 
-		HBA_PORT *port = (HBA_PORT *) port_base;
+		volatile HBA_PORT *port = (HBA_PORT *) port_base;
 
 		EFI_PHYSICAL_ADDRESS cl_addr, fis_addr, ct_addr, buffer_addr;
 
@@ -150,6 +119,80 @@ void pci_scan_ahci(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bu
 			}
 		}
 	}
+}
+
+#define NVME_REG_CAP 0x00
+#define NVME_REG_VS 0x08
+#define NVME_REG_CC 0x14
+#define NVME_REG_CSTS 0x1C
+#define NVME_REG_AQA 0x24
+#define NVME_REG_ASQ 0x28
+#define NVME_REG_ACQ 0x30
+void pci_scan_nvme(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
+	LOG_INFO(L"PCI_SCAN_NVME", L"Found NVMe controller at %d:%d:%d\r\n", bus, dev, func);
+
+	uint32_t bar0 = pci_read_config((uint8_t) bus, dev, func, 0x10);
+	uint64_t base = (bar0 & 0xFFFFFFF0);
+
+	if ((bar0 & 0x06) == 0x04) {
+		uint32_t bar1 = pci_read_config((uint8_t) bus, dev, func, 0x14);
+		base |= ((uint64_t) bar1 << 32);
+	}
+
+	if (base == 0) {
+		LOG_ERROR(L"PCI_SCAN_NVME", L"-> BAR0 is unassigned by Firmware.\r\n");
+		return;
+	}
+
+	LOG_INFO(L"PCI_SCAN_NVME", L"-> BAR Address: 0x%llx\r\n", base);
+
+	uint32_t cmd = pci_read_config((uint8_t) bus, dev, func, 0x04);
+	cmd |= 0x06;
+	pci_write_config((uint8_t) bus, dev, func, 0x04, cmd);
+
+	volatile uint64_t *cap_reg = (volatile uint64_t *) (uintptr_t) base;
+	uint64_t cap = *cap_reg;
+
+	LOG_INFO(L"PCI_SCAN_NVME", L"-> NVMe CAP: 0x%llx\r\n", cap);
+
+	volatile uint32_t *ver_reg = (volatile uint32_t *) (uintptr_t) (base + 0x08);
+	LOG_INFO(L"PCI_SCAN_NVME", L"-> NVMe Ver: %d.%d\r\n", (*ver_reg >> 16), (*ver_reg >> 8) & 0xFF);
+
+	volatile uint32_t *cc = (volatile uint32_t *) (base + NVME_REG_CC);
+	volatile uint32_t *csts = (volatile uint32_t *) (base + NVME_REG_CSTS);
+
+	if (*cc & 0x01) {
+		*cc &= ~0x01;
+	}
+
+	uint32_t timeout = 1000000;
+	while ((*csts & 0x01) && --timeout);
+	if (timeout <= 0) {
+		LOG_ERROR(L"PCI_SCAN_NVME", L"Device timed out!\r\n");
+		return;
+	}
+
+	EFI_PHYSICAL_ADDRESS asq, acq;
+	system_table->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &asq);
+	system_table->BootServices->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &acq);
+	system_table->BootServices->SetMem((void *) asq, 4096, 0);
+	system_table->BootServices->SetMem((void *) acq, 4096, 0);
+
+	*(volatile uint32_t *) (base + NVME_REG_AQA) = (63 << 16) | 63;
+	*(volatile uint64_t *) (base + NVME_REG_ASQ) = asq;
+	*(volatile uint64_t *) (base + NVME_REG_ACQ) = acq;
+
+	*cc = 0x01;
+
+	timeout = 1000000;
+	while (!(*csts & 0x01) && --timeout);
+
+	if (timeout <= 0) {
+		LOG_ERROR(L"PCI_SCAN_NVME", L"Device timed out!\r\n");
+		return;
+	}
+
+	disk_manager_register(dm, DISK_TYPE_NVME, bus, dev, func, 0, (void*)base);
 }
 
 void pci_scan_ide(EFI_SYSTEM_TABLE *system_table, DISK_MANAGER *dm, uint16_t bus, uint8_t dev, uint8_t func) {
