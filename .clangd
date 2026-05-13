@@ -1,5 +1,7 @@
 CompileFlags:
   Add: [
+    "-xc",
+    "-std=c11",
     "-I../include",
     "-I/usr/include/efi",
     "-I/usr/include/efi/x86_64",
@@ -7,7 +9,9 @@ CompileFlags:
     "-DEFI_FUNCTION_WRAPPER",
     "-DGNU_EFI_USE_MS_ABI",
     "-fno-stack-protector",
-    "-mno-red-zone"
+    "-mno-red-zone",
+    "-ffreestanding",
+    "-fno-builtin"
   ]
 
 Diagnostics:

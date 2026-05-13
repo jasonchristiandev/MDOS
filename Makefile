@@ -16,14 +16,13 @@ EFI_LDS = $(EFILIB)/elf_$(ARCH)_efi.lds
 CFLAGS = $(EFIINCS) -fno-stack-protector \
 			-fshort-wchar -mno-red-zone -Wall \
 			-DEFI_FUNCTION_WRAPPER -DGNU_EFI_USE_MS_ABI \
-			-I$(INCLUDE)
+			-I$(INCLUDE) -std=c11
 
 LDFLAGS = -nostdlib -znocombreloc -shared -Bsymbolic -L$(EFILIB) --entry _start
 
 CC = gcc
 LD = ld
 OBJCOPY = objcopy
-
 
 # MISC
 
@@ -93,7 +92,6 @@ $(BUILD)/boot.efi: $(BUILD)/boot.so
 	$(OBJCOPY) -j .text -j .sdata -j .data -j .rodata -j .dynamic \
 		-j .dynsym  -j .rel -j .rela -j .reloc \
 		--target=efi-app-$(ARCH) --subsystem=10 $< $@
-
 
 # KERNEL
 

@@ -3,7 +3,7 @@
 #include "utils.h"
 #include <efi.h>
 
-static_assert(true);
+_Static_assert(1 == 1, "");
 #pragma pack(push, 1)
 typedef struct {
 	uint8_t boot_indicator;

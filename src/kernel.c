@@ -13,13 +13,13 @@ __attribute__((section(".text._start"))) void __attribute__((sysv_abi)) _start(B
 
 	DISK_MANAGER disk_mgr;
 	disk_manager_init(&disk_mgr);
-	scan_pci(system_table, &disk_mgr);
+	pci_scan(system_table, &disk_mgr);
 
 	LOG_INFO(L"Disk scan complete. Found %d disk(s).\r\n\r\n", disk_mgr.count);
 
 	if (disk_mgr.count == 0) {
 		LOG_ERROR(L"No disks found! Nothing to do.\r\n");
-		while (1) asm("hlt");
+		while (1) __asm__("hlt");
 	}
 
 	LOG_INFO(L"Probing disks for FAT32 filesystem...\r\n\r\n");
@@ -46,7 +46,7 @@ __attribute__((section(".text._start"))) void __attribute__((sysv_abi)) _start(B
 
 	if (!fs_mounted) {
 		LOG_ERROR(L"No FAT32 partition found on any disk.\r\n");
-		while (1) asm("hlt");
+		while (1) __asm__("hlt");
 	}
 
 	LOG_INFO(L"Reading root directory...");
@@ -54,6 +54,6 @@ __attribute__((section(".text._start"))) void __attribute__((sysv_abi)) _start(B
 	fat32_list_dir(system_table, &fs, fs.root_cluster);
 
 	while (1) {
-		asm("hlt");
+		__asm__("hlt");
 	}
 }

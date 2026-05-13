@@ -1,5 +1,5 @@
 #pragma once
-#include "printf.h"
+#include "printf.h" // IWYU pragma: keep
 
 #define EXIT                                                                                        \
 	do {                                                                                            \
