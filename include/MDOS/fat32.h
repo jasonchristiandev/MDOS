@@ -122,18 +122,18 @@ static inline BOOLEAN fat32_find_partition(EFI_SYSTEM_TABLE *system_table, DISK_
 	uint8_t mbr_buf[512];
 
 	if (!disk_read(system_table, disk, 0, 1, mbr_buf)) {
-		LOG_INFO(L"FAT32: Failed to read MBR\r\n");
+		LOG_ERROR(L"FAT32", L"Failed to read MBR!\r\n");
 		return FALSE;
 	}
 
 	MBR *mbr = (MBR *) mbr_buf;
 
 	if (mbr->signature != 0xAA55) {
-		LOG_INFO(L"FAT32: Invalid MBR signature (0x%x)\r\n", mbr->signature);
+		LOG_ERROR(L"FAT32", L"Invalid MBR signature (0x%x)!\r\n", mbr->signature);
 		return FALSE;
 	}
 
-	LOG_INFO(L"FAT32: MBR signature OK (0xAA55)\r\n");
+	LOG_INFO(L"FAT32", L"MBR signature OK (0xAA55).\r\n");
 
 	BOOLEAN has_any_partition = FALSE;
 	for (int i = 0; i < 4; i++) {
@@ -145,14 +145,14 @@ static inline BOOLEAN fat32_find_partition(EFI_SYSTEM_TABLE *system_table, DISK_
 		if (part->partition_type == PARTITION_TYPE_FAT32_LBA ||
 			part->partition_type == PARTITION_TYPE_FAT32) {
 
-			LOG_INFO(L"FAT32: Found partition %d: type=0x%02x, start_lba=%d, size=%d sectors\r\n",
+			LOG_INFO(L"FAT32", L"Found partition %d: type=0x%02x, start_lba=%d, size=%d sectors.\r\n",
 				  i, part->partition_type, part->starting_lba, part->total_sectors);
 
 			*out_partition_lba = part->starting_lba;
 			return TRUE;
 		}
 
-		LOG_INFO(L"FAT32: Partition %d: type=0x%02x (not FAT32)\r\n", i, part->partition_type);
+		LOG_INFO(L"FAT32", L"Partition %d: type=0x%02x (not FAT32).\r\n", i, part->partition_type);
 	}
 
 	if (!has_any_partition) {
@@ -165,13 +165,13 @@ static inline BOOLEAN fat32_find_partition(EFI_SYSTEM_TABLE *system_table, DISK_
 			bpb->sectors_per_fat_32 > 0 &&
 			bpb->root_cluster >= 2) {
 
-			LOG_INFO(L"FAT32: No partition table found, but VBR detected at sector 0 (superfloppy)\r\n");
+			LOG_INFO(L"FAT32", L"No partition table found, but VBR detected at sector 0 (superfloppy)\r\n");
 			*out_partition_lba = 0;
 			return TRUE;
 		}
 	}
 
-	LOG_INFO(L"FAT32: No FAT32 partition found in MBR\r\n");
+	LOG_ERROR(L"FAT32", L"No FAT32 partition found in MBR\r\n");
 	return FALSE;
 }
 
@@ -182,19 +182,19 @@ static inline BOOLEAN fat32_mount(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *d
 	filesystem->partition_lba = partition_lba;
 
 	if (!disk_read(system_table, disk, partition_lba, 1, vbr_buf)) {
-		LOG_INFO(L"FAT32: Failed to read VBR at LBA %d\r\n", partition_lba);
+		LOG_ERROR(L"FAT32", L"Failed to read VBR at LBA %d!\r\n", partition_lba);
 		return FALSE;
 	}
 
 	FAT32_BPB *bpb = (FAT32_BPB *) vbr_buf;
 
 	if (bpb->bytes_per_sector != 512) {
-		LOG_INFO(L"FAT32: Unsupported sector size: %d\r\n", bpb->bytes_per_sector);
+		LOG_ERROR(L"FAT32", L"Unsupported sector size: %d!\r\n", bpb->bytes_per_sector);
 		return FALSE;
 	}
 
 	if (bpb->sectors_per_cluster == 0 || (bpb->sectors_per_cluster & (bpb->sectors_per_cluster - 1)) != 0) {
-		LOG_INFO(L"FAT32: Invalid sectors per cluster: %d\r\n", bpb->sectors_per_cluster);
+		LOG_ERROR(L"FAT32", L"Invalid sectors per cluster: %d!\r\n", bpb->sectors_per_cluster);
 		return FALSE;
 	}
 
@@ -207,16 +207,16 @@ static inline BOOLEAN fat32_mount(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *d
 	filesystem->data_offset = filesystem->reserved_sectors + (bpb->num_fats * filesystem->sectors_per_fat);
 	filesystem->root_cluster = bpb->root_cluster;
 
-	LOG_INFO(L"FAT32: Mounted at LBA %d\r\n", partition_lba);
-	LOG_INFO(L"FAT32:   bytes/sector:    %d\r\n", filesystem->bytes_per_sector);
-	LOG_INFO(L"FAT32:   sectors/cluster: %d\r\n", filesystem->sectors_per_cluster);
-	LOG_INFO(L"FAT32:   cluster_size:    %d bytes\r\n", filesystem->cluster_size);
-	LOG_INFO(L"FAT32:   reserved:        %d sectors\r\n", filesystem->reserved_sectors);
-	LOG_INFO(L"FAT32:   FAT sectors:     %d\r\n", filesystem->sectors_per_fat);
-	LOG_INFO(L"FAT32:   data offset:     LBA +%d\r\n", filesystem->data_offset);
-	LOG_INFO(L"FAT32:   root cluster:    %d\r\n", filesystem->root_cluster);
-	LOG_INFO(L"FAT32:   volume label:    %.11s\r\n", bpb->volume_label);
-	LOG_INFO(L"FAT32:   filesystem type:         %.8s\r\n", bpb->fs_type);
+	LOG_INFO(L"FAT32", L"Mounted at LBA %d\r\n", partition_lba);
+	LOG_INFO(L"FAT32", L"  bytes/sector:    %d\r\n", filesystem->bytes_per_sector);
+	LOG_INFO(L"FAT32", L"  sectors/cluster: %d\r\n", filesystem->sectors_per_cluster);
+	LOG_INFO(L"FAT32", L"  cluster_size:    %d bytes\r\n", filesystem->cluster_size);
+	LOG_INFO(L"FAT32", L"  reserved:        %d sectors\r\n", filesystem->reserved_sectors);
+	LOG_INFO(L"FAT32", L"  FAT sectors:     %d\r\n", filesystem->sectors_per_fat);
+	LOG_INFO(L"FAT32", L"  data offset:     LBA +%d\r\n", filesystem->data_offset);
+	LOG_INFO(L"FAT32", L"  root cluster:    %d\r\n", filesystem->root_cluster);
+	LOG_INFO(L"FAT32", L"  volume label:    %.11s\r\n", bpb->volume_label);
+	LOG_INFO(L"FAT32", L"  filesystem type:         %.8s\r\n", bpb->fs_type);
 
 	return TRUE;
 }
@@ -230,7 +230,7 @@ static inline uint32_t fat32_next_cluster(EFI_SYSTEM_TABLE *system_table, FAT32_
 	uint8_t sector_buf[512];
 
 	if (!disk_read(system_table, filesystem->disk, lba, 1, sector_buf)) {
-		LOG_INFO(L"FAT32: Failed to read FAT sector at LBA %d\r\n", lba);
+		LOG_INFO(L"FAT32", L"Failed to read FAT sector at LBA %d\r\n", lba);
 		return 0xFFFFFFFF;
 	}
 
@@ -252,7 +252,7 @@ static inline uint32_t fat32_read_chain(EFI_SYSTEM_TABLE *system_table, FAT32_FI
 		uint8_t cluster_buf[4096];
 
 		if (!fat32_read_cluster(system_table, filesystem, cluster, cluster_buf)) {
-			LOG_INFO(L"FAT32: Failed to read cluster %d\r\n", cluster);
+			LOG_INFO(L"FAT32", L"Failed to read cluster %d\r\n", cluster);
 			break;
 		}
 
@@ -317,7 +317,7 @@ static inline void fat32_to_83(const char *input, char *out) {
 }
 
 static inline void fat32_list_dir(EFI_SYSTEM_TABLE *system_table, FAT32_FILESYSTEM *filesystem, uint32_t dir_cluster) {
-	LOG_INFO(L"FAT32: Listing directory (cluster %d):\r\n", dir_cluster);
+	LOG_INFO(L"FAT32", L"Listing directory (cluster %d):\r\n", dir_cluster);
 
 	uint8_t cluster_buf[4096];
 	uint32_t cluster = dir_cluster;
@@ -325,7 +325,7 @@ static inline void fat32_list_dir(EFI_SYSTEM_TABLE *system_table, FAT32_FILESYST
 
 	while (!fat32_is_end_of_chain(cluster) && !fat32_is_free_cluster(cluster)) {
 		if (!fat32_read_cluster(system_table, filesystem, cluster, cluster_buf)) {
-			LOG_INFO(L"FAT32: Failed to read directory cluster %d\r\n", cluster);
+			LOG_INFO(L"FAT32", L"Failed to read directory cluster %d\r\n", cluster);
 			return;
 		}
 
@@ -364,7 +364,7 @@ static inline void fat32_list_dir(EFI_SYSTEM_TABLE *system_table, FAT32_FILESYST
 			uint32_t size = entry->file_size;
 			const CHAR16 *type_str = (entry->attributes & ATTR_DIRECTORY) ? L"<DIR>" : L"<FILE>";
 
-			LOG_INFO(L"FAT32: -> %s  %s  cluster=%d  size=%d\r\n", type_str, wname, fc, size);
+			LOG_INFO(L"FAT32", L"%s  %s  cluster=%d  size=%d\r\n", type_str, wname, fc, size);
 			file_count++;
 		}
 
@@ -372,7 +372,7 @@ static inline void fat32_list_dir(EFI_SYSTEM_TABLE *system_table, FAT32_FILESYST
 	}
 
 	if (file_count == 0) {
-		LOG_INFO(L"FAT32:   (empty directory)\r\n");
+		LOG_INFO(L"FAT32", L"   (empty directory)\r\n");
 	}
 }
 

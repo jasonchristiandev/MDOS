@@ -1,9 +1,9 @@
 #include "MDOS/bootinfo.h"
+#include "MDOS/fat32.h"
 #include "MDOS/pci.h"
 #include "MDOS/utils.h"
-#include "MDOS/fat32.h"
 
-__attribute__((section(".text._start"))) void __attribute__((sysv_abi)) _start(BOOT_INFO *info) {
+__attribute__((section(".text._start"))) unsigned long __attribute__((sysv_abi)) _start(BOOT_INFO *info) {
 	EFI_SYSTEM_TABLE *system_table = info->system_table;
 	GRAPHICS_INFO *graphics_info = info->graphics_info;
 
@@ -15,14 +15,18 @@ __attribute__((section(".text._start"))) void __attribute__((sysv_abi)) _start(B
 	disk_manager_init(&disk_mgr);
 	pci_scan(system_table, &disk_mgr);
 
-	LOG_INFO(L"Disk scan complete. Found %d disk(s).\r\n\r\n", disk_mgr.count);
+	LOG_INFO(L"KERNEL", L"Disk scan complete. Found %d disk(s).\r\n", disk_mgr.count);
 
 	if (disk_mgr.count == 0) {
-		LOG_ERROR(L"No disks found! Nothing to do.\r\n");
-		while (1) __asm__("hlt");
+		LOG_ERROR(L"KERNEL", L"No disks found! Nothing to do.\r\n");
+		EXIT(L"KERNEL");
+		return EFI_NOT_FOUND;
 	}
+	
+	LOG_INFO(L"KERNEL", L"Press any key to continue...\r\n");
+	WAIT_FOR_KEY();
 
-	LOG_INFO(L"Probing disks for FAT32 filesystem...\r\n\r\n");
+	LOG_INFO(L"KERNEL", L"Probing disks for FAT32 filesystem...\r\n");
 
 	DISK_DEVICE *boot_disk = NULL;
 	FAT32_FILESYSTEM fs;
@@ -32,24 +36,24 @@ __attribute__((section(".text._start"))) void __attribute__((sysv_abi)) _start(B
 		DISK_DEVICE *d = &disk_mgr.devices[i];
 		uint32_t part_lba;
 
-		LOG_INFO(L"-> Probing disk %d (type=%d, port=%d)...\r\n", i, d->type, d->port_index);
+		LOG_INFO(L"KERNEL", L"Probing disk %d (type=%d, port=%d)...\r\n", i, d->type, d->port_index);
 
 		if (fat32_find_partition(system_table, d, &part_lba)) {
 			if (fat32_mount(system_table, d, part_lba, &fs)) {
 				boot_disk = d;
 				fs_mounted = TRUE;
-				LOG_INFO(L"-> FAT32 mounted on disk %d!\r\n\r\n", i);
+				LOG_INFO(L"KERNEL", L"FAT32 mounted on disk %d!\r\n", i);
 				break;
 			}
 		}
 	}
 
 	if (!fs_mounted) {
-		LOG_ERROR(L"No FAT32 partition found on any disk.\r\n");
-		while (1) __asm__("hlt");
+		EXIT(L"KERNEL");
+		return EFI_NOT_FOUND;
 	}
 
-	LOG_INFO(L"Reading root directory...");
+	LOG_INFO(L"KERNEL", L"Reading root directory...");
 
 	fat32_list_dir(system_table, &fs, fs.root_cluster);
 

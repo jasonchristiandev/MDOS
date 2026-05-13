@@ -9,7 +9,7 @@ EFI_STATUS efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
 	system_table->BootServices->SetWatchdogTimer(0, 0, 0, NULL);
 	system_table->ConOut->ClearScreen(system_table->ConOut);
 
-	LOG_INFO(L"Starting MDOS...\r\n");
+	LOG_INFO(L"BOOTLOADER", L"Starting MDOS...\r\n");
 
 	// Load Kernel
 
@@ -37,12 +37,12 @@ EFI_STATUS efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
 		EFI_FILE_READ_ONLY);
 
 	if (kernel_file_status != EFI_SUCCESS) {
-		LOG_ERROR(L"Failed to load kernel.bin.\r\n");
-		EXIT;
+		LOG_ERROR(L"BOOTLOADER", L"Failed to load kernel.bin.\r\n");
+		EXIT(L"KERNEL");
 		return kernel_file_status;
 	}
 
-	LOG_INFO(L"Found kernel.bin on the disk.\r\n");
+	LOG_INFO(L"BOOTLOADER", L"Found kernel.bin on the disk.\r\n");
 
 	EFI_FILE_INFO *file_info = NULL;
 
@@ -63,23 +63,23 @@ EFI_STATUS efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
 		&kernel_address);
 
 	if (kernel_file_status != EFI_SUCCESS) {
-		LOG_ERROR(L"Failed to reserve 1MB mark for kernel.\r\n");
-		EXIT;
+		LOG_ERROR(L"BOOTLOADER", L"Failed to reserve 1MB mark for kernel.\r\n");
+		EXIT(L"KERNEL");
 		return kernel_file_status;
 	}
-	LOG_INFO(L"Reserved 1MB mark for kernel.\r\n");
+	LOG_INFO(L"BOOTLOADER", L"Reserved 1MB mark for kernel.\r\n");
 
 	void *kernel_buffer = (void *) kernel_address;
 
 	kernel_file_status = kernel_file->Read(kernel_file, &kernel_size, kernel_buffer);
 
 	if (kernel_file_status != EFI_SUCCESS) {
-		LOG_ERROR(L"Failed to read kernel data into memory.\r\n");
-		EXIT;
+		LOG_ERROR(L"BOOTLOADER", L"Failed to read kernel data into memory.\r\n");
+		EXIT(L"KERNEL");
 		return kernel_file_status;
 	}
 
-	LOG_INFO(L"Successfully loaded kernel into memory at address 0x%x\r\n", kernel_buffer);
+	LOG_INFO(L"BOOTLOADER", L"Successfully loaded kernel into memory at address 0x%x!\r\n", kernel_buffer);
 
 	kernel_file->Close(kernel_file);
 
@@ -92,11 +92,11 @@ EFI_STATUS efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
 		(void **) &gop);
 
 	if (gop_status != EFI_SUCCESS) {
-		LOG_ERROR(L"Failed to locate GOP (Graphics Output Protocol).\r\n");
+		LOG_ERROR(L"BOOTLOADER", L"Failed to locate GOP (Graphics Output Protocol).\r\n");
 		return gop_status;
 	}
 
-	LOG_INFO(L"Graphics found (%dx%d).\r\n",
+	LOG_INFO(L"BOOTLOADER", L"Graphics found (%dx%d).\r\n",
 			 gop->Mode->Info->HorizontalResolution,
 			 gop->Mode->Info->VerticalResolution);
 
@@ -112,12 +112,10 @@ EFI_STATUS efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
 
 	// Start Kernel
 
-	typedef void __attribute__((sysv_abi)) (*KernelEntry)(BOOT_INFO *);
+	typedef unsigned long __attribute__((sysv_abi)) (*KernelEntry)(BOOT_INFO *);
 	KernelEntry kernel_start = (KernelEntry) kernel_buffer;
 
-	LOG_INFO(L"Starting kernel...\r\n\r\n");
+	LOG_INFO(L"BOOTLOADER", L"Starting kernel...\r\n");
 
-	kernel_start(&boot_info);
-
-	return EFI_SUCCESS;
+	return kernel_start(&boot_info);
 }

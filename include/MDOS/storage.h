@@ -123,7 +123,7 @@ void storage_init_port(EFI_SYSTEM_TABLE *st, HBA_PORT *port) {
 #define ATA_CMD_READ_DMA_EXT 0x25
 #define ATA_CMD_WRITE_DMA_EXT 0x35
 
-BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
+BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint8_t index, uint64_t lba, uint32_t count, uint16_t *buffer) {
 	port->is = 0xFFFF;
 	int slot = 0;
 
@@ -164,7 +164,7 @@ BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64
 		spin++;
 	}
 	if (spin == 1000000) {
-		LOG_ERROR(L"Port is hung!\r\n");
+		LOG_ERROR(L"STORAGE_AHCI_READ", L"Port %d is hung!\r\n", index);
 		return FALSE;
 	}
 
@@ -174,7 +174,7 @@ BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64
 		if ((port->ci & (1 << slot)) == 0) break;
 
 		if (port->is & (1 << 30)) {
-			LOG_ERROR(L"Read disk error\r\n");
+			LOG_ERROR(L"STORAGE_AHCI_READ", L"Read disk error in port %d!\r\n", index);
 			return FALSE;
 		}
 	}
@@ -182,7 +182,7 @@ BOOLEAN storage_ahci_read(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64
 	return TRUE;
 }
 
-BOOLEAN storage_ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint64_t lba, uint32_t count, uint16_t *buffer) {
+BOOLEAN storage_ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint8_t index, uint64_t lba, uint32_t count, uint16_t *buffer) {
 	port->is = 0xFFFF;
 	int slot = 0;
 
@@ -190,7 +190,7 @@ BOOLEAN storage_ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint6
 	cmd_header += slot;
 
 	cmd_header->cfl = sizeof(FIS_REG_H2D) / sizeof(uint32_t);
-	cmd_header->w = 1; // Write
+	cmd_header->w = 1;
 	cmd_header->prdtl = 1;
 
 	HBA_CMD_TBL *cmd_table = (HBA_CMD_TBL *) (uintptr_t) cmd_header->ctba;
@@ -223,7 +223,7 @@ BOOLEAN storage_ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint6
 		spin++;
 	}
 	if (spin == 1000000) {
-		LOG_ERROR(L"Port is hung!\r\n");
+		LOG_ERROR(L"STORAGE_AHCI_WRITE", L"Port %d is hung!\r\n", index);
 		return FALSE;
 	}
 
@@ -233,7 +233,7 @@ BOOLEAN storage_ahci_write(EFI_SYSTEM_TABLE *system_table, HBA_PORT *port, uint6
 		if ((port->ci & (1 << slot)) == 0) break;
 
 		if (port->is & (1 << 30)) {
-			LOG_ERROR(L"Write disk error\r\n");
+			LOG_ERROR(L"STORAGE_AHCI_WRITE", L"Write disk error in port %d!\r\n", index);
 			return FALSE;
 		}
 	}

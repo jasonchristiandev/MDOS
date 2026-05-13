@@ -49,15 +49,15 @@ static inline void disk_manager_register(DISK_MANAGER *manager, uint8_t type, ui
 static inline BOOLEAN disk_read(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *disk, uint64_t lba, uint32_t count, void *buffer) {
 	switch (disk->type) {
 		case DISK_TYPE_AHCI:
-			return storage_ahci_read(system_table, (HBA_PORT *) disk->port, lba, count, (uint16_t *) buffer);
+			return storage_ahci_read(system_table, (HBA_PORT *) disk->port, disk->port_index, lba, count, (uint16_t *) buffer);
 		case DISK_TYPE_NVME:
-			LOG_ERROR(L"!! NVMe read not yet implemented\r\n");
+			LOG_ERROR(L"DISK_READ", L"-> NVMe read not yet implemented!\r\n");
 			return FALSE;
 		case DISK_TYPE_IDE:
-			LOG_ERROR(L"!! IDE read not yet implemented\r\n");
+			LOG_ERROR(L"DISK_READ", L"-> IDE read not yet implemented!\r\n");
 			return FALSE;
 		default:
-			LOG_ERROR(L"!! Unknown disk type %d\r\n", disk->type);
+			LOG_ERROR(L"DISK_READ", L"-> Unknown disk type %d!\r\n", disk->type);
 			return FALSE;
 	}
 }
@@ -65,15 +65,15 @@ static inline BOOLEAN disk_read(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *dis
 static inline BOOLEAN disk_write(EFI_SYSTEM_TABLE *system_table, DISK_DEVICE *disk, uint64_t lba, uint32_t count, void *buffer) {
 	switch (disk->type) {
 		case DISK_TYPE_AHCI:
-			return storage_ahci_write(system_table, (HBA_PORT *) disk->port, lba, count, (uint16_t *) buffer);
+			return storage_ahci_write(system_table, (HBA_PORT *) disk->port, disk->port_index, lba, count, (uint16_t *) buffer);
 		case DISK_TYPE_NVME:
-			LOG_ERROR(L"!! NVMe write not yet implemented\r\n");
+			LOG_ERROR(L"DISK_WRITE", L"-> NVMe write not yet implemented!\r\n");
 			return FALSE;
 		case DISK_TYPE_IDE:
-			LOG_ERROR(L"!! IDE write not yet implemented\r\n");
+			LOG_ERROR(L"DISK_WRITE", L"-> IDE write not yet implemented!\r\n");
 			return FALSE;
 		default:
-			LOG_ERROR(L"!! Unknown disk type %d\r\n", disk->type);
+			LOG_ERROR(L"DISK_WRITE", L"-> Unknown disk type %d!\r\n", disk->type);
 			return FALSE;
 	}
 }
